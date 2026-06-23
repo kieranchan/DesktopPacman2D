@@ -19,9 +19,53 @@
   ],
   "scripts": {
     "start": "electron .",
-    "test:launch": "powershell -ExecutionPolicy Bypass -File scripts/test-launch.ps1"
+    "test:launch": "powershell -ExecutionPolicy Bypass -File scripts/test-launch.ps1",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:win:portable": "electron-builder --win portable",
+    "build:dir": "electron-builder --dir"
   },
   "devDependencies": {
-    "electron": "^42.4.1"
+    "electron": "^42.4.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "io.github.desktoppacman2d",
+    "productName": "DesktopPacman2D",
+    "copyright": "Copyright © 2025 DesktopPacman2D Contributors",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "!src/**/*.md",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "src/main.js"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        },
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "src/icon.png"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-${version}-setup.exe",
+      "shortcutName": "DesktopPacman2D"
+    }
   }
 }
