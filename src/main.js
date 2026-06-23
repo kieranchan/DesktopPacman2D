@@ -1,7 +1,14 @@
 const { app, BrowserWindow, Tray, Menu, screen, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const log = require('electron-log');
 const config = require('./config');
+
+// Logs land in userData/logs/main.log on every platform. Catch uncaught
+// errors in the main process so a packaged build never silently dies.
+log.transports.file.level = 'info';
+log.transports.console.level = 'debug';
+log.catchErrors({ showDialog: false });
 
 const PRELOAD_PATH = path.join(__dirname, 'preload.js');
 
@@ -35,6 +42,20 @@ function createWindowForDisplay(display) {
     win.setIgnoreMouseEvents(true, { forward: true });
     win.loadFile(path.join(__dirname, 'index.html'));
     win.on('closed', () => windows.delete(display.id));
+
+    win.webContents.on('render-process-gone', (_event, details) => {
+        log.error(`Renderer gone (display ${display.id}): ${details.reason}`, details);
+        if (details.reason === 'clean-exit' || win.isDestroyed()) return;
+        setTimeout(() => {
+            if (!win.isDestroyed()) {
+                log.info(`Reloading window for display ${display.id} after crash`);
+                win.reload();
+            }
+        }, 1000);
+    });
+    win.webContents.on('unresponsive', () => {
+        log.warn(`Renderer unresponsive (display ${display.id})`);
+    });
 
     windows.set(display.id, win);
     return win;
@@ -155,7 +176,7 @@ function rebuildTrayMenu() {
 function createTray() {
     const iconPath = path.join(__dirname, 'icon.png');
     if (!fs.existsSync(iconPath)) {
-        console.error('Tray icon missing ->', iconPath);
+        log.error('Tray icon missing ->', iconPath);
         return;
     }
     try {
@@ -166,13 +187,14 @@ function createTray() {
         });
         rebuildTrayMenu();
     } catch (e) {
-        console.error('Failed to create tray:', e);
+        log.error('Failed to create tray:', e);
     }
 }
 
 app.whenReady().then(() => {
     config.init(app.getPath('userData'));
     syncAutoStart();
+    log.info(`DesktopPacman2D ${app.getVersion()} starting; logs at ${log.transports.file.getFile().path}`);
 
     ipcMain.handle('runtime:get-config', () => config.get());
 

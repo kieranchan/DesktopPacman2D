@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const log = require('electron-log');
 
 const DEFAULTS = Object.freeze({
     paused: false,
@@ -27,7 +28,7 @@ function init(userDataDir) {
             }
         }
     } catch (e) {
-        console.error('Failed to load config, falling back to defaults:', e.message);
+        log.error('Failed to load config, falling back to defaults:', e.message);
     }
     return get();
 }
@@ -49,7 +50,7 @@ function scheduleSave() {
         try {
             fs.writeFileSync(configPath, JSON.stringify(cache, null, 2), 'utf8');
         } catch (e) {
-            console.error('Failed to save config:', e.message);
+            log.error('Failed to save config:', e.message);
         }
     }, 250);
 }
@@ -61,7 +62,7 @@ function flush() {
         try {
             fs.writeFileSync(configPath, JSON.stringify(cache, null, 2), 'utf8');
         } catch (e) {
-            console.error('Failed to flush config:', e.message);
+            log.error('Failed to flush config:', e.message);
         }
     }
 }

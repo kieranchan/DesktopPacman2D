@@ -48,11 +48,15 @@
       "target": [
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "src/icon.png"
@@ -67,5 +71,8 @@
       "artifactName": "${productName}-${version}-setup.exe",
       "shortcutName": "DesktopPacman2D"
     }
+  },
+  "dependencies": {
+    "electron-log": "^5.4.4"
   }
 }

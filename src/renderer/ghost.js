@@ -11,10 +11,20 @@ export class ClassicGhost {
         this.radius = 18;
         this.dead = false;
         this.timer = 0;
+        this.respawnAt = 0;
     }
 
     update(dt, game) {
-        if (this.dead) return;
+        if (this.dead) {
+            // gameTime-driven respawn: no setTimeout, so reset/quit won't
+            // leave stray callbacks acting on a stale world. Pausing also
+            // suspends respawn naturally (gameTime stops advancing).
+            if (game.gameTime >= this.respawnAt) {
+                this.dead = false;
+                this.pos = { x: Math.random() * game.width, y: Math.random() * game.height };
+            }
+            return;
+        }
         this.timer += dt;
 
         const ghostSpeed = CONFIG.ghostSpeed * game.config.speedMultiplier;
@@ -53,11 +63,8 @@ export class ClassicGhost {
 
     die(game) {
         this.dead = true;
+        this.respawnAt = game.gameTime + 5.0;
         game.logSystem("SYS.PURGE", `PID_${Math.floor(Math.random() * 9999)} ISOLATED`);
-        setTimeout(() => {
-            this.dead = false;
-            this.pos = { x: Math.random() * game.width, y: Math.random() * game.height };
-        }, 5000);
     }
 
     draw(ctx, target) {
