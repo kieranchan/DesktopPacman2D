@@ -1,9 +1,25 @@
 {
   "name": "desktop-pacman",
+  "productName": "DesktopPacman2D",
   "version": "1.0.0",
+  "description": "A non-intrusive, mouse-transparent desktop overlay running an auto-playing Pac-Man simulation with retro CRT visuals. Built with Electron.",
   "main": "src/main.js",
+  "author": {
+    "name": "DesktopPacman2D Contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "electron",
+    "desktop-pet",
+    "overlay",
+    "pacman",
+    "crt",
+    "screensaver",
+    "ambient"
+  ],
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "test:launch": "powershell -ExecutionPolicy Bypass -File scripts/test-launch.ps1"
   },
   "devDependencies": {
     "electron": "^42.4.1"
