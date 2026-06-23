@@ -60,6 +60,23 @@ class Director {
         this.actors = { pacman: null, ghosts: [], dots: [], logs: [] };
         this.gameTime = 0;
 
+        // Runtime-tunable config (mirrors src/config.js DEFAULTS).
+        this.config = {
+            paused: false,
+            crtEnabled: true,
+            crtStrength: CONFIG.crtStrength,
+            speedMultiplier: 1.0,
+            dotCount: CONFIG.dotCount
+        };
+
+        if (window.petAPI) {
+            window.petAPI.onConfig(cfg => this.applyConfig(cfg));
+            window.petAPI.onReset(() => this.resetWorld());
+            window.petAPI.requestInitialConfig()
+                .then(cfg => this.applyConfig(cfg))
+                .catch(() => {});
+        }
+
         this.resize();
         window.addEventListener('resize', () => this.resize());
 
@@ -71,6 +88,30 @@ class Director {
             this.logSystem("SYS.BOOT", "KERNEL PANIC: GHOST_PROCESS DETECTED");
             requestAnimationFrame(t => this.loop(t));
         }, 100);
+    }
+
+    applyConfig(cfg) {
+        if (!cfg || typeof cfg !== 'object') return;
+        const next = { ...this.config };
+        for (const key of Object.keys(this.config)) {
+            if (key in cfg) next[key] = cfg[key];
+        }
+        // If dotCount shrank, trim immediately so the world responds visibly.
+        if (next.dotCount < this.actors.dots.length) {
+            this.actors.dots.length = next.dotCount;
+        }
+        const wasPaused = this.config.paused;
+        this.config = next;
+        if (wasPaused && !next.paused) {
+            // Avoid a giant dt spike after resuming.
+            this.lastTime = performance.now();
+        }
+    }
+
+    resetWorld() {
+        this.actors = { pacman: null, ghosts: [], dots: [], logs: [] };
+        this.initWorld();
+        this.logSystem("SYS.RESET", "WORLD REINITIALIZED");
     }
 
     resize() {
@@ -91,7 +132,7 @@ class Director {
             this.actors.ghosts.push(new ClassicGhost(gx, gy, c));
         });
 
-        for(let i=0; i<CONFIG.dotCount; i++) this.spawnDot();
+        for(let i=0; i<this.config.dotCount; i++) this.spawnDot();
     }
 
     spawnDot() {
@@ -114,21 +155,23 @@ class Director {
     loop(timestamp) {
         const dt = Math.min((timestamp - this.lastTime) / 1000, 0.1);
         this.lastTime = timestamp;
-        this.gameTime += dt;
 
         this.ctx.clearRect(0, 0, this.width, this.height);
 
-        // 更新逻辑
-        if (this.actors.dots.length < CONFIG.dotCount) this.spawnDot();
-        this.actors.pacman.update(dt, this);
-        this.actors.ghosts.forEach(g => g.update(dt, this));
-        this.updateLogs(dt);
+        if (!this.config.paused) {
+            this.gameTime += dt;
+            if (this.actors.dots.length < this.config.dotCount) this.spawnDot();
+            this.actors.pacman.update(dt, this);
+            this.actors.ghosts.forEach(g => g.update(dt, this));
+            this.updateLogs(dt);
+        }
 
         // 渲染层
         this.drawWorld();
 
-        // 【核心】后期处理：CRT 扫描线效果
-        this.drawCRTOverlay();
+        if (this.config.crtEnabled && this.config.crtStrength > 0) {
+            this.drawCRTOverlay();
+        }
 
         requestAnimationFrame(t => this.loop(t));
     }
@@ -183,7 +226,7 @@ class Director {
         this.ctx.pointerEvents = 'none'; // 确保不阻挡任何东西
 
         // 1. 绘制横向扫描线
-        this.ctx.fillStyle = `rgba(0, 0, 0, ${CONFIG.crtStrength})`;
+        this.ctx.fillStyle = `rgba(0, 0, 0, ${this.config.crtStrength})`;
         for (let y = 0; y < this.height; y += 3) {
             this.ctx.fillRect(0, y, this.width, 1);
         }
@@ -212,7 +255,7 @@ class ClassicPacman {
     }
 
     update(dt, game) {
-        // --- 标准 AI 逻辑 (省略以节省篇幅，与之前版本一致) ---
+        const speed = CONFIG.pacSpeed * game.config.speedMultiplier;
         let steering = { x: 0, y: 0 };
         let target = null;
         let minDist = Infinity;
@@ -224,7 +267,7 @@ class ClassicPacman {
         });
         if (target) {
             let desire = Vec2.normalize(Vec2.sub(target.pos, this.pos));
-            desire = Vec2.mult(desire, CONFIG.pacSpeed);
+            desire = Vec2.mult(desire, speed);
             steering = Vec2.add(steering, Vec2.sub(desire, this.vel));
         }
         // 躲避
@@ -233,7 +276,7 @@ class ClassicPacman {
                 const d = Vec2.dist(this.pos, g.pos);
                 if (d < 150 && !g.dead) {
                     let flee = Vec2.normalize(Vec2.sub(this.pos, g.pos));
-                    flee = Vec2.mult(flee, CONFIG.pacSpeed * 4);
+                    flee = Vec2.mult(flee, speed * 4);
                     steering = Vec2.add(steering, flee);
                 }
             });
@@ -247,7 +290,7 @@ class ClassicPacman {
 
         steering = Vec2.limit(steering, 15);
         this.vel = Vec2.add(this.vel, steering);
-        this.vel = Vec2.limit(this.vel, CONFIG.pacSpeed);
+        this.vel = Vec2.limit(this.vel, speed);
         this.pos = Vec2.add(this.pos, Vec2.mult(this.vel, dt));
 
         if (Vec2.mag(this.vel) > 10) this.angle = Math.atan2(this.vel.y, this.vel.x);
@@ -322,18 +365,19 @@ class ClassicGhost {
         if (this.dead) return;
         this.timer += dt;
 
-        // --- 标准 AI ---
+        const ghostSpeed = CONFIG.ghostSpeed * game.config.speedMultiplier;
+        const fleeSpeed = CONFIG.fleeSpeed * game.config.speedMultiplier;
         let steering = { x: 0, y: 0 };
         if (game.actors.pacman.powerTimer > 0) {
             let flee = Vec2.normalize(Vec2.sub(this.pos, game.actors.pacman.pos));
-            flee = Vec2.mult(flee, CONFIG.fleeSpeed);
+            flee = Vec2.mult(flee, fleeSpeed);
             steering = Vec2.add(steering, flee);
         } else {
             let seek = Vec2.normalize(Vec2.sub(game.actors.pacman.pos, this.pos));
-            seek = Vec2.mult(seek, CONFIG.ghostSpeed);
+            seek = Vec2.mult(seek, ghostSpeed);
             steering = Vec2.add(steering, seek);
         }
-        // 分离和边界 (省略详细代码，同上)
+        // 分离和边界
         game.actors.ghosts.forEach(other => {
             if(other !== this && !other.dead && Vec2.dist(this.pos,other.pos)<50)
                 steering = Vec2.add(steering, Vec2.mult(Vec2.normalize(Vec2.sub(this.pos,other.pos)), 80));
@@ -344,7 +388,7 @@ class ClassicGhost {
 
         steering = Vec2.limit(steering, 8);
         this.vel = Vec2.add(this.vel, steering);
-        this.vel = Vec2.limit(this.vel, CONFIG.ghostSpeed);
+        this.vel = Vec2.limit(this.vel, ghostSpeed);
         this.pos = Vec2.add(this.pos, Vec2.mult(this.vel, dt));
     }
 
