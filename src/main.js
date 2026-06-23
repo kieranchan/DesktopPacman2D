@@ -1,78 +1,107 @@
 const { app, BrowserWindow, Tray, Menu, screen } = require('electron');
 const path = require('path');
-const fs = require('fs'); // 引入文件系统模块
-let mainWindow;
-let tray;
+const fs = require('fs');
 
-function createWindow() {
-    // 获取主屏幕尺寸
-    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+// One transparent overlay window per display. Keyed by display.id so we can
+// add/remove windows as the user plugs/unplugs monitors at runtime.
+const windows = new Map();
+let tray = null;
 
-    mainWindow = new BrowserWindow({
-        width: width,
-        height: height,
-        x: 0,
-        y: 0,
-        transparent: true,      // 关键：透明
-        frame: false,           // 关键：无边框
-        hasShadow: false,       // 去掉阴影
-        alwaysOnTop: true,      // 关键：置顶
-        skipTaskbar: true,      // 不在任务栏显示
+function createWindowForDisplay(display) {
+    // Use bounds (full screen area including taskbar) instead of workAreaSize,
+    // so pac-man can roam through the taskbar region as well.
+    const { x, y, width, height } = display.bounds;
+
+    const win = new BrowserWindow({
+        x, y, width, height,
+        transparent: true,
+        frame: false,
+        hasShadow: false,
+        alwaysOnTop: true,
+        skipTaskbar: true,
         resizable: false,
+        focusable: false,
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false
         }
     });
 
-    // 【核心】设置鼠标穿透
-    // forward: true 表示鼠标事件会传递给桌面底层的应用
-    // 这样吃豆人在跑，您照样可以写代码、点网页
-    mainWindow.setIgnoreMouseEvents(true, { forward: true });
+    win.setIgnoreMouseEvents(true, { forward: true });
+    win.loadFile(path.join(__dirname, 'index.html'));
+    win.on('closed', () => windows.delete(display.id));
 
-    mainWindow.loadFile(path.join(__dirname, 'index.html'));
+    windows.set(display.id, win);
+    return win;
+}
 
-    // 防止垃圾回收导致窗口关闭（虽然在 electron 中通常不需要，但在某些逻辑下是好习惯）
-    mainWindow.on('closed', () => mainWindow = null);
+function createAllWindows() {
+    for (const display of screen.getAllDisplays()) {
+        createWindowForDisplay(display);
+    }
+}
+
+function reloadAllWindows() {
+    for (const win of windows.values()) {
+        if (!win.isDestroyed()) win.reload();
+    }
+}
+
+function setAllWindowsVisible(visible) {
+    for (const win of windows.values()) {
+        if (win.isDestroyed()) continue;
+        if (visible) win.show(); else win.hide();
+    }
+}
+
+function anyWindowVisible() {
+    for (const win of windows.values()) {
+        if (!win.isDestroyed() && win.isVisible()) return true;
+    }
+    return false;
 }
 
 function createTray() {
-    // 图片放在 src 目录下，和 main.js 同级
     const iconPath = path.join(__dirname, 'icon.png');
-
-    // 【后端习惯】防御性编程：先检查文件存不存在
     if (!fs.existsSync(iconPath)) {
-        console.error('错误：找不到图标文件 ->', iconPath);
-        return; // 如果没图，就不创建托盘了，防止程序崩溃
+        console.error('Tray icon missing ->', iconPath);
+        return;
     }
-
-    // 创建托盘实例
     try {
         tray = new Tray(iconPath);
-
         const contextMenu = Menu.buildFromTemplate([
-            { label: '复位吃豆人', click: () => mainWindow.reload() }, // 加个刷新功能以防卡死
-            { type: 'separator' }, // 分割线
+            { label: '复位吃豆人', click: () => reloadAllWindows() },
+            { type: 'separator' },
             { label: '退出', click: () => app.quit() }
         ]);
-
         tray.setToolTip('桌面吃豆人 (Running)');
         tray.setContextMenu(contextMenu);
-
-        // 这是一个好习惯：点击托盘图标可以切换显示/隐藏（可选）
-        tray.on('click', () => {
-            mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();
-        });
-
+        tray.on('click', () => setAllWindowsVisible(!anyWindowVisible()));
     } catch (e) {
-        console.error("创建托盘失败:", e);
+        console.error('Failed to create tray:', e);
     }
 }
 
 app.whenReady().then(() => {
-    // 这里的顺序很重要：先出窗口，再出托盘
-    createWindow();
-    createTray(); // <--- 记得这里要取消注释
+    createAllWindows();
+    createTray();
+
+    // Handle monitor hotplug at runtime.
+    screen.on('display-added', (_event, newDisplay) => {
+        if (!windows.has(newDisplay.id)) createWindowForDisplay(newDisplay);
+    });
+    screen.on('display-removed', (_event, oldDisplay) => {
+        const win = windows.get(oldDisplay.id);
+        if (win && !win.isDestroyed()) win.close();
+        windows.delete(oldDisplay.id);
+    });
+    screen.on('display-metrics-changed', (_event, changedDisplay) => {
+        const win = windows.get(changedDisplay.id);
+        if (win && !win.isDestroyed()) {
+            const { x, y, width, height } = changedDisplay.bounds;
+            win.setBounds({ x, y, width, height });
+        }
+    });
 });
 
 app.on('window-all-closed', () => {
