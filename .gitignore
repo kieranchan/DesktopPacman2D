@@ -1,0 +1,14 @@
+node_modules/
+dist/
+out/
+build/
+.cache/
+*.log
+.DS_Store
+Thumbs.db
+.env
+.env.local
+*.tmp
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/usage.statistics.xml

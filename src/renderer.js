@@ -387,7 +387,7 @@ class ClassicGhost {
         ctx.fill();
 
         // 硬边描边
-        ctx.strokeStyle = '#000';gemini
+        ctx.strokeStyle = '#000';
         ctx.lineWidth = 2;
         ctx.stroke();
 
