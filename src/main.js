@@ -1,6 +1,8 @@
-const { app, BrowserWindow, Tray, Menu, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, screen, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
+
+const PRELOAD_PATH = path.join(__dirname, 'preload.js');
 
 // One transparent overlay window per display. Keyed by display.id so we can
 // add/remove windows as the user plugs/unplugs monitors at runtime.
@@ -22,8 +24,10 @@ function createWindowForDisplay(display) {
         resizable: false,
         focusable: false,
         webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
+            preload: PRELOAD_PATH,
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: false
         }
     });
 
@@ -83,6 +87,10 @@ function createTray() {
 }
 
 app.whenReady().then(() => {
+    // IPC: renderer can ask for current config on load. For now this returns
+    // an empty object; later tasks will populate it with persisted settings.
+    ipcMain.handle('runtime:get-config', () => ({}));
+
     createAllWindows();
     createTray();
 
